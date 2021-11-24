@@ -29,6 +29,25 @@ import (
 	gomod "golang.org/x/mod/module"
 )
 
+/*
+func TestPkgsLoad(t *testing.T) {
+	const (
+		loadTypes = packages.NeedImports | packages.NeedDeps | packages.NeedTypes
+		loadModes = loadTypes | packages.NeedName | packages.NeedModule | packages.NeedFiles
+	)
+	cfg := &packages.Config{
+		Mode:   loadModes,
+		Loaded: loaded,
+	}
+	if _, err := packages.Load(cfg, "strconv", "strings"); err != nil {
+		t.Fatal("TestPkgsLoad:", err)
+	}
+	if _, err := packages.Load(cfg, "fmt", "context", "time", "flag", "testing"); err != nil {
+		t.Fatal("TestPkgsLoad:", err)
+	}
+}
+*/
+
 func TestContractName(t *testing.T) {
 	testcases := []struct {
 		Contract
