@@ -22,6 +22,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/tools/go/packages"
@@ -48,6 +49,8 @@ type PkgRef struct {
 	pkg  *Package
 
 	pkgf *pkgFingerp
+
+	imports []string // TODO: remove
 
 	// IllTyped indicates whether the package or any dependency contains errors.
 	// It is set only when Types is set.
@@ -138,6 +141,16 @@ func (p *pkgFingerp) localRepChanged(localDir string) bool {
 	return p.dirty
 }
 
+func (p *pkgFingerp) fileList() []string {
+	if p == nil {
+		return nil
+	}
+	if p.localrep {
+		return p.files[1:]
+	}
+	return p.files
+}
+
 func (p *PkgRef) markUsed(v *ast.Ident) {
 	if p.isUsed {
 		return
@@ -182,7 +195,7 @@ func (p *PkgRef) EnsureImported() {
 
 // LoadGoPkgs loads and returns the Go packages named by the given pkgPaths.
 func LoadGoPkgs(at *Package, importPkgs map[string]*PkgRef, pkgPaths ...string) int {
-	conf := at.InternalGetLoadConfig()
+	conf := at.InternalGetLoadConfig(nil)
 	loadPkgs, err := packages.Load(conf, pkgPaths...)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -214,18 +227,20 @@ func LoadGoPkg(at *Package, imports map[string]*PkgRef, loadPkg *packages.Packag
 			pkg.ID = loadPkg.ID
 			pkg.Types = pkgTypes
 			pkg.IllTyped = loadPkg.IllTyped
+			pkg.imports = getImports(loadPkg)
 		}
 	} else {
 		pkg = &PkgRef{
 			ID:       loadPkg.ID,
 			Types:    pkgTypes,
 			IllTyped: loadPkg.IllTyped,
+			imports:  getImports(loadPkg),
 			pkg:      at,
 		}
 		imports[loadPkg.PkgPath] = pkg
 	}
 	if loadPkg.PkgPath != "unsafe" {
-		initGopPkg(dedupPkg(imports, pkg))
+		initGopPkg(pkgTypes)
 	}
 	pkg.pkgf = newPkgFingerp(at, loadPkg)
 }
@@ -352,6 +367,79 @@ func toIndex(c byte) int {
 	panic("invalid character out of [0-9,a-z]")
 }
 
+type loadedPkgs struct {
+	imports map[string]*PkgRef
+	loaded  map[string]*packages.Package
+	at      *Package
+	mutex   sync.Mutex
+}
+
+func newLoadedPkgs(at *Package, imports map[string]*PkgRef) *loadedPkgs {
+	return &loadedPkgs{
+		imports: imports,
+		loaded:  map[string]*packages.Package{},
+		at:      at,
+	}
+}
+
+func getImports(pkg *packages.Package) []string {
+	imports := make([]string, 0, len(pkg.Imports))
+	for path := range pkg.Imports {
+		imports = append(imports, path)
+	}
+	return imports
+}
+
+func (p *loadedPkgs) makeImports(pkgRef *PkgRef) map[string]*packages.Package {
+	imports := pkgRef.imports
+	if len(imports) == 0 {
+		return nil
+	}
+	ret := map[string]*packages.Package{}
+	for _, path := range imports {
+		if pkg, ok := p.lookup(path); ok {
+			ret[path] = pkg
+		}
+	}
+	return ret
+}
+
+func (p *loadedPkgs) lookup(pkgPath string) (*packages.Package, bool) {
+	if pkg, ok := p.loaded[pkgPath]; ok {
+		return pkg, true
+	}
+	if pkg, ok := p.imports[pkgPath]; ok {
+		loadPkg := &packages.Package{
+			ID:       pkg.ID,
+			Name:     pkg.Types.Name(),
+			PkgPath:  pkgPath,
+			GoFiles:  pkg.pkgf.fileList(),
+			Types:    pkg.Types,
+			Imports:  p.makeImports(pkg),
+			IllTyped: pkg.IllTyped,
+		}
+		p.loaded[pkgPath] = loadPkg
+		log.Println("LookupLoaded:", pkgPath)
+		return loadPkg, true
+	}
+	return nil, false
+}
+
+func (p *loadedPkgs) LookupLoaded(pkgPath string) (*packages.Package, bool) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	return p.lookup(pkgPath)
+}
+
+func (p *loadedPkgs) AddLoaded(pkg *packages.Package) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	p.loaded[pkg.PkgPath] = pkg
+	LoadGoPkg(p.at, p.imports, pkg)
+}
+
 type LoadPkgsCached struct {
 	imports   map[string]*PkgRef
 	pkgsLoad  func(cfg *packages.Config, patterns ...string) ([]*packages.Package, error)
@@ -404,15 +492,16 @@ retry:
 			if pkg, ok := importPkgs[pkgPath]; ok {
 				typs := *loadPkg.Types
 				pkg.ID = loadPkg.ID
-				pkg.Types = &typs // clone *types.Package instance
+				pkg.Types = &typs // clone *types.Package instance -- TODO: maybe have bugs
 				pkg.IllTyped = loadPkg.IllTyped
+				pkg.imports = loadPkg.imports
 			}
 		} else {
 			unimportedPaths = append(unimportedPaths, pkgPath)
 		}
 	}
 	if len(unimportedPaths) > 0 {
-		conf := at.InternalGetLoadConfig()
+		conf := at.InternalGetLoadConfig(newLoadedPkgs(at, p.imports))
 		loadPkgs, err := p.pkgsLoad(conf, unimportedPaths...)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -458,9 +547,10 @@ const (
 )
 
 // InternalGetLoadConfig is a internal function. don't use it.
-func (p *Package) InternalGetLoadConfig() *packages.Config {
+func (p *Package) InternalGetLoadConfig(loaded packages.LoadedPkgs) *packages.Config {
 	conf := p.conf
 	return &packages.Config{
+		Loaded:     loaded,
 		Mode:       loadModes,
 		Context:    conf.Context,
 		Logf:       conf.Logf,

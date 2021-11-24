@@ -1200,6 +1200,9 @@ func main() {
 }
 
 func TestDefineVar(t *testing.T) {
+	TestVarDeclInFunc(t)
+	log.Println("------------------------------------")
+
 	pkg := newMainPackage()
 	fmt := pkg.Import("fmt")
 	pkg.NewFunc(nil, "main", nil, nil, false).BodyStart(pkg).

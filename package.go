@@ -479,7 +479,7 @@ func loadModFile(file string) (m *module) {
 	}
 	f, err := modfile.Parse(file, src, nil)
 	if err != nil {
-		log.Println("modfile.Parse failed:", err)
+		log.Println("modfile.Parse:", err)
 		return
 	}
 	deps := map[string]*pkgdep{}
