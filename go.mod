@@ -7,5 +7,4 @@ require (
 	golang.org/x/tools v0.1.7
 )
 
-// golang.org/x/tools => github.com/goplus/tools v0.1.7-gop1
-replace golang.org/x/tools => /Users/xushiwei/work/tools
+replace golang.org/x/tools => github.com/goplus/tools v0.1.7-gop2

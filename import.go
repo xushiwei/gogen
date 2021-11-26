@@ -364,7 +364,7 @@ var (
 	}
 )
 
-func (p *loadedPkgs) LookupLoaded(pkgPath string) (pkg *packages.Package, ok bool) {
+func (p *loadedPkgs) Lookup(pkgPath string) (pkg *packages.Package, ok bool) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
@@ -372,7 +372,7 @@ func (p *loadedPkgs) LookupLoaded(pkgPath string) (pkg *packages.Package, ok boo
 	return
 }
 
-func (p *loadedPkgs) AddLoaded(pkg *packages.Package) {
+func (p *loadedPkgs) Add(pkg *packages.Package) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
@@ -395,7 +395,7 @@ func (p *LoadPkgsCached) changed(at *Package, pkg *PkgRef, pkgPath string) bool 
 	case ptModulePkg:
 		return pkgf.localChanged()
 	}
-	dep, ok := m.deps[pkgPath]
+	dep, ok := m.lookupDep(pkgPath)
 	if !ok {
 		log.Println("[WARN] Imported package is not in modfile:", pkgPath)
 		return false
