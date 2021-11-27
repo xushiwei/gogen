@@ -424,6 +424,7 @@ func (p *LoadPkgsCached) Save() error {
 }
 
 func (p *LoadPkgsCached) Load(at *Package, importPkgs map[string]*PkgRef, pkgPaths ...string) int {
+	var nretry int
 	var unimportedPaths []string
 retry:
 	for _, pkgPath := range pkgPaths {
@@ -439,6 +440,10 @@ retry:
 		}
 	}
 	if len(unimportedPaths) > 0 {
+		if nretry > 1 {
+			log.Println("Load packages too many times:", unimportedPaths)
+			return len(unimportedPaths)
+		}
 		conf := at.InternalGetLoadConfig(loaded)
 		loadPkgs, err := p.pkgsLoad(conf, unimportedPaths...)
 		if err != nil {
@@ -452,6 +457,7 @@ retry:
 			LoadGoPkg(at, p.imports, loadPkg)
 		}
 		pkgPaths, unimportedPaths = unimportedPaths, nil
+		nretry++
 		goto retry
 	}
 	return 0
