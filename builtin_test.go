@@ -22,8 +22,6 @@ import (
 	"testing"
 
 	"github.com/goplus/gox/internal"
-	"golang.org/x/mod/modfile"
-	"golang.org/x/tools/go/packages"
 )
 
 func TestContractName(t *testing.T) {
@@ -406,7 +404,6 @@ func TestPkgsLoad(t *testing.T) {
 		t.Fatal("newPkgFingerp(os) != nil")
 	}
 }
-*/
 
 func TestPkgFingerp(t *testing.T) {
 	dep := &pkgdep{replace: "abc"}
@@ -447,7 +444,6 @@ func TestPkgFingerp(t *testing.T) {
 	}
 }
 
-/*
 func TestImported1(t *testing.T) {
 	pkg := new(Package)
 	pkg.mod = &module{

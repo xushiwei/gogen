@@ -5,15 +5,11 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"io/ioutil"
 	"log"
 	"path"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
-
-	"golang.org/x/mod/modfile"
 )
 
 type LoadNamedFunc = func(at *Package, typ *types.Named)
@@ -49,6 +45,7 @@ func SetDebug(dbgFlags int) {
 	if (dbgFlags & DbgFlagSetDebug) != 0 {
 		log.Printf("SetDebug: import=%v, match=%v, instr=%v\n", debugImport, debugMatch, debugInstr)
 	}
+	_ = debugPersistCache
 }
 
 type fatalMsg string
@@ -313,7 +310,6 @@ type Package struct {
 	cb             CodeBuilder
 	files          [2]file
 	conf           *Config
-	mod            *module
 	Fset           *token.FileSet
 	builtin        *types.Package
 	utBigInt       *types.Named
@@ -393,121 +389,6 @@ func getInTestingFile(inTestingFile bool) int {
 // HasTestingFile returns true if this package has testing files.
 func (p *Package) HasTestingFile() bool {
 	return len(p.files[1].decls) != 0
-}
-
-func (p *Package) loadMod() *module {
-	if p.mod == nil {
-		modRootDir := p.conf.ModRootDir
-		if modRootDir != "" {
-			p.mod = loadModFile(filepath.Join(modRootDir, "go.mod"))
-		}
-		if p.mod == nil {
-			p.mod = &module{deps: map[string]*pkgdep{}}
-		}
-	}
-	return p.mod
-}
-
-// ----------------------------------------------------------------------------
-
-type pkgdep struct {
-	path    string
-	replace string
-}
-
-func (p *pkgdep) calcFingerp() string {
-	if p.replace != "" {
-		return p.replace
-	}
-	return p.path
-}
-
-type module struct {
-	*modfile.Module
-	deps map[string]*pkgdep
-}
-
-func (p *module) lookupDep(pkgPath string) (dep *pkgdep, ok bool) {
-	for modPath, dep := range p.deps {
-		if isPkgInModule(pkgPath, modPath) {
-			return dep, true
-		}
-	}
-	return
-}
-
-func isPkgInModule(pkgPath, modPath string) bool {
-	if strings.HasPrefix(pkgPath, modPath) {
-		suffix := pkgPath[len(modPath):]
-		return suffix == "" || suffix[0] == '/'
-	}
-	return false
-}
-
-type pkgType int
-
-const (
-	ptStandardPkg pkgType = iota
-	ptModulePkg
-	ptLocalPkg
-	ptExternPkg
-	ptInvalidPkg = -1
-)
-
-func (p *module) getPkgType(pkgPath string) pkgType {
-	if pkgPath == "" {
-		return ptInvalidPkg
-	}
-	if p.Module != nil {
-		if isPkgInModule(pkgPath, p.Module.Mod.Path) {
-			return ptModulePkg
-		}
-	}
-	c := pkgPath[0]
-	if c == '/' || c == '.' {
-		return ptLocalPkg
-	}
-	pos := strings.Index(pkgPath, "/")
-	if pos > 0 {
-		pkgPath = pkgPath[:pos]
-	}
-	if strings.Contains(pkgPath, ".") {
-		return ptExternPkg
-	}
-	return ptStandardPkg
-}
-
-func loadModFile(file string) (m *module) {
-	src, err := ioutil.ReadFile(file)
-	if err != nil {
-		log.Println("Modfile not found:", file)
-		return
-	}
-	f, err := modfile.Parse(file, src, nil)
-	if err != nil {
-		log.Println("modfile.Parse:", err)
-		return
-	}
-	deps := map[string]*pkgdep{}
-	for _, v := range f.Require {
-		deps[v.Mod.Path] = &pkgdep{
-			path: v.Mod.String(),
-		}
-	}
-	for _, v := range f.Replace {
-		if dep, ok := deps[v.Old.Path]; ok {
-			dep.replace = v.New.String()
-		}
-	}
-	return &module{deps: deps, Module: f.Module}
-}
-
-func isLocalRepPkg(replace string) bool {
-	if replace == "" {
-		return false
-	}
-	c := replace[0]
-	return c == '/' || c == '.'
 }
 
 // ----------------------------------------------------------------------------
