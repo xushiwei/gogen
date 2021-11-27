@@ -150,27 +150,41 @@ func (p *Package) internalGetLoadConfig(loaded packages.LoadedPkgs) *packages.Co
 
 // loadPkgs loads and returns the Go/Go+ packages named by the given pkgPaths.
 func loadPkgs(at *Package, importPkgs map[string]*PkgRef, pkgPaths ...string) int {
-	conf := at.internalGetLoadConfig(gblLoaded)
-	loadPkgs, err := packages.Load(conf, pkgPaths...)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	var unimportedPaths []string
+	for _, pkgPath := range pkgPaths {
+		if loadPkg, ok := gblLoaded.Lookup(pkgPath); ok {
+			initPkg(importPkgs, loadPkg)
+		} else {
+			unimportedPaths = append(unimportedPaths, pkgPath)
+		}
 	}
-	if n := packages.PrintErrors(loadPkgs); n > 0 {
-		return n
-	}
-	for _, loadPkg := range loadPkgs {
-		if pkg, ok := importPkgs[loadPkg.PkgPath]; ok {
-			pkg.ID = loadPkg.ID
-			pkg.IllTyped = loadPkg.IllTyped
-			pkg.name = loadPkg.Name
-			pkg.Types = loadPkg.Types
-			if loadPkg.PkgPath != "unsafe" {
-				initGopPkg(loadPkg.Types)
-			}
+	if unimportedPaths != nil {
+		conf := at.internalGetLoadConfig(gblLoaded)
+		loadPkgs, err := packages.Load(conf, unimportedPaths...)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if n := packages.PrintErrors(loadPkgs); n > 0 {
+			return n
+		}
+		for _, loadPkg := range loadPkgs {
+			initPkg(importPkgs, loadPkg)
 		}
 	}
 	return 0
+}
+
+func initPkg(importPkgs map[string]*PkgRef, loadPkg *packages.Package) {
+	if pkg, ok := importPkgs[loadPkg.PkgPath]; ok {
+		pkg.ID = loadPkg.ID
+		pkg.IllTyped = loadPkg.IllTyped
+		pkg.name = loadPkg.Name
+		pkg.Types = loadPkg.Types
+		if loadPkg.PkgPath != "unsafe" {
+			initGopPkg(loadPkg.Types)
+		}
+	}
 }
 
 // Import func
