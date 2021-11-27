@@ -48,6 +48,8 @@ type PkgRef struct {
 	file *file // to import packages anywhere
 	pkg  *Package
 
+	imports []string // to reconstruct packages.Package objects
+
 	pkgf *pkgFingerp
 
 	// IllTyped indicates whether the package or any dependency contains errors.
@@ -251,12 +253,14 @@ func LoadGoPkg(at *Package, imports map[string]*PkgRef, loadPkg *packages.Packag
 			pkg.ID = loadPkg.ID
 			pkg.Types = pkgTypes
 			pkg.IllTyped = loadPkg.IllTyped
+			pkg.imports = makeImports(loadPkg)
 		}
 	} else {
 		pkg = &PkgRef{
 			ID:       loadPkg.ID,
 			Types:    pkgTypes,
 			IllTyped: loadPkg.IllTyped,
+			imports:  makeImports(loadPkg),
 			pkg:      at,
 		}
 		imports[loadPkg.PkgPath] = pkg
@@ -265,6 +269,18 @@ func LoadGoPkg(at *Package, imports map[string]*PkgRef, loadPkg *packages.Packag
 		initGopPkg(pkgTypes)
 	}
 	pkg.pkgf = newPkgFingerp(at, loadPkg)
+}
+
+func makeImports(loadPkg *packages.Package) []string {
+	imports := loadPkg.Imports
+	if len(imports) == 0 {
+		return nil
+	}
+	ret := make([]string, 0, len(imports))
+	for _, pkg := range imports {
+		ret = append(ret, pkg.PkgPath)
+	}
+	return ret
 }
 
 func fileList(loadPkg *packages.Package) []string {

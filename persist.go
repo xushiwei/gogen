@@ -499,6 +499,7 @@ type persistPkgRef struct {
 	Types     []persistNamed `json:"types,omitempty"`
 	Funcs     []persistFunc  `json:"funcs,omitempty"`
 	Files     []string       `json:"files,omitempty"`
+	Imports   []string       `json:"imports,omitempty"`
 	Fingerp   string         `json:"fingerp,omitempty"`
 	Versioned bool           `json:"versioned,omitempty"`
 	LocalRep  bool           `json:"localrep,omitempty"`
@@ -547,6 +548,7 @@ func toPersistPkg(pkg *PkgRef) *persistPkgRef {
 		Types:   typs,
 		Funcs:   funcs,
 		Consts:  consts,
+		Imports: pkg.imports,
 	}
 	if pkgf := pkg.pkgf; pkgf != nil {
 		ret.Fingerp = pkgf.getFingerp()
@@ -569,7 +571,7 @@ func fromPersistPkg(ctx *persistPkgCtx, pkg *persistPkgRef) *PkgRef {
 			versioned: pkg.Versioned, localrep: pkg.LocalRep,
 		}
 	}
-	ret := &PkgRef{ID: pkg.ID, Types: ctx.pkg, pkgf: pkgf}
+	ret := &PkgRef{ID: pkg.ID, Types: ctx.pkg, pkgf: pkgf, imports: pkg.Imports}
 	ctx.imports[pkg.PkgPath] = ret
 	for _, typ := range pkg.Types {
 		fromPersistTypeName(ctx, typ)
@@ -711,13 +713,34 @@ func loadPkgsCacheFrom(file string) map[string]*PkgRef {
 
 // ----------------------------------------------------------------------------
 
-func loadedPkgFrom(imp *PkgRef) *packages.Package {
-	return &packages.Package{
+func requirePkg(loaded map[string]*packages.Package, path string) *packages.Package {
+	ret, ok := loaded[path]
+	if !ok {
+		ret = &packages.Package{}
+		loaded[path] = ret
+	}
+	return ret
+}
+
+func importsFrom(loaded map[string]*packages.Package, imp *PkgRef) map[string]*packages.Package {
+	imports := imp.imports
+	if len(imports) == 0 {
+		return nil
+	}
+	ret := make(map[string]*packages.Package, len(imports))
+	for _, path := range imports {
+		ret[path] = requirePkg(loaded, path)
+	}
+	return ret
+}
+
+func loadedPkgFrom(loaded map[string]*packages.Package, path string, imp *PkgRef) {
+	*requirePkg(loaded, path) = packages.Package{
 		ID:       imp.ID,
 		Name:     imp.Types.Name(),
 		PkgPath:  imp.Types.Path(),
 		GoFiles:  imp.pkgf.getFileList(),
-		Imports:  nil,
+		Imports:  importsFrom(loaded, imp),
 		Types:    imp.Types,
 		Fset:     nil,
 		IllTyped: imp.IllTyped,
@@ -728,7 +751,7 @@ func loadedPkgFrom(imp *PkgRef) *packages.Package {
 func loadedPkgsFrom(imports map[string]*PkgRef) map[string]*packages.Package {
 	loaded := map[string]*packages.Package{}
 	for path, imp := range imports {
-		loaded[path] = loadedPkgFrom(imp)
+		loadedPkgFrom(loaded, path, imp)
 	}
 	return loaded
 }
