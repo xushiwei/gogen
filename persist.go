@@ -14,6 +14,13 @@
 package gox
 
 import (
+	"sync"
+
+	"golang.org/x/tools/go/packages"
+)
+
+/*
+import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
@@ -25,6 +32,7 @@ import (
 	"math/big"
 	"reflect"
 	"strconv"
+	"sync"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -735,6 +743,7 @@ func importsFrom(loaded map[string]*packages.Package, imp *PkgRef) map[string]*p
 }
 
 func loadedPkgFrom(loaded map[string]*packages.Package, path string, imp *PkgRef) {
+	log.Println("====> loadedPkgFrom:", path)
 	*requirePkg(loaded, path) = packages.Package{
 		ID:       imp.ID,
 		Name:     imp.Types.Name(),
@@ -754,6 +763,197 @@ func loadedPkgsFrom(imports map[string]*PkgRef) map[string]*packages.Package {
 		loadedPkgFrom(loaded, path, imp)
 	}
 	return loaded
+}
+
+/*
+// LoadGoPkgs loads and returns the Go packages named by the given pkgPaths.
+func LoadGoPkgs(at *Package, importPkgs map[string]*PkgRef, pkgPaths ...string) int {
+	conf := at.InternalGetLoadConfig(nil)
+	loadPkgs, err := packages.Load(conf, pkgPaths...)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if n := packages.PrintErrors(loadPkgs); n > 0 {
+		return n
+	}
+	for _, loadPkg := range loadPkgs {
+		LoadGoPkg(at, importPkgs, loadPkg)
+	}
+	return 0
+}
+
+func LoadGoPkg(at *Package, imports map[string]*PkgRef, loadPkg *packages.Package) {
+	for _, impPkg := range loadPkg.Imports {
+		if _, ok := imports[impPkg.PkgPath]; ok { // this package is loaded
+			continue
+		}
+		LoadGoPkg(at, imports, impPkg)
+	}
+	imps := makeImports(loadPkg)
+	if debugImport {
+		log.Println("==> Import", loadPkg.PkgPath, "- Depends:", imps)
+	}
+	pkg, ok := imports[loadPkg.PkgPath]
+	pkgTypes := loadPkg.Types
+	if ok {
+		if pkg.ID == "" {
+			pkg.ID = loadPkg.ID
+			pkg.Types = pkgTypes
+			pkg.IllTyped = loadPkg.IllTyped
+			pkg.imports = imps
+		}
+	} else {
+		pkg = &PkgRef{
+			ID:       loadPkg.ID,
+			Types:    pkgTypes,
+			IllTyped: loadPkg.IllTyped,
+			imports:  imps,
+			pkg:      at,
+		}
+		imports[loadPkg.PkgPath] = pkg
+	}
+	if loadPkg.PkgPath != "unsafe" {
+		initGopPkg(pkgTypes)
+	}
+	pkg.pkgf = newPkgFingerp(at, loadPkg)
+}
+
+type LoadPkgsCached struct {
+	loaded    *loadedPkgs
+	pkgsLoad  func(cfg *packages.Config, patterns ...string) ([]*packages.Package, error)
+	cacheFile string
+}
+
+func (p *LoadPkgsCached) Load(at *Package, importPkgs map[string]*PkgRef, pkgPaths ...string) int {
+	var nretry int
+	var unimportedPaths []string
+retry:
+	for _, pkgPath := range pkgPaths {
+		if loadPkg, ok := p.imported(at, pkgPath); ok {
+			if pkg, ok := importPkgs[pkgPath]; ok {
+				typs := *loadPkg.Types
+				pkg.ID = loadPkg.ID
+				pkg.Types = &typs // clone *types.Package instance -- TODO: maybe have bugs
+				pkg.IllTyped = loadPkg.IllTyped
+			}
+		} else {
+			unimportedPaths = append(unimportedPaths, pkgPath)
+		}
+	}
+	if len(unimportedPaths) > 0 {
+		if nretry > 1 {
+			log.Println("Load packages too many times:", unimportedPaths)
+			return len(unimportedPaths)
+		}
+		conf := at.InternalGetLoadConfig(p.loaded)
+		loadPkgs, err := p.pkgsLoad(conf, unimportedPaths...)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if n := packages.PrintErrors(loadPkgs); n > 0 {
+			return n
+		}
+		for _, loadPkg := range loadPkgs {
+			LoadGoPkg(at, p.imports, loadPkg)
+		}
+		pkgPaths, unimportedPaths = unimportedPaths, nil
+		nretry++
+		goto retry
+	}
+	return 0
+}
+
+func (p *LoadPkgsCached) changed(at *Package, pkg *PkgRef, pkgPath string) bool {
+	pkgf := pkg.pkgf
+	m := at.loadMod()
+	pt := m.getPkgType(pkgPath)
+	switch pt {
+	case ptStandardPkg:
+		return false
+	case ptModulePkg:
+		return pkgf.localChanged()
+	}
+	dep, ok := m.lookupDep(pkgPath)
+	if !ok {
+		log.Println("[WARN] Imported package is not in modfile:", pkgPath)
+		return false
+	}
+	if isLocalRepPkg(dep.replace) {
+		return pkgf.localRepChanged(dep.replace)
+	}
+	return pkgf.versionChanged(dep.calcFingerp())
+}
+
+func (p *LoadPkgsCached) imported(at *Package, pkgPath string) (pkg *PkgRef, ok bool) {
+	if pkg, ok = p.imports[pkgPath]; ok {
+		if p.changed(at, pkg, pkgPath) {
+			log.Println("==> LoadPkgsCached: package changed -", pkgPath)
+			delete(p.imports, pkgPath)
+			return nil, false
+		}
+	}
+	return
+}
+
+func (p *LoadPkgsCached) Save() error {
+	if p.cacheFile == "" {
+		return nil
+	}
+	return savePkgsCache(p.cacheFile, p.imports)
+}
+
+// NewLoadPkgsCached returns a cached pkgLoader.
+func NewLoadPkgsCached(
+	load func(cfg *packages.Config, patterns ...string) ([]*packages.Package, error)) LoadPkgsFunc {
+	if load == nil {
+		load = packages.Load
+	}
+	imports := make(map[string]*PkgRef)
+	return (&LoadPkgsCached{imports: imports, loaded: loaded, pkgsLoad: load}).Load
+}
+
+// OpenLoadPkgsCached opens cache file and returns the cached pkgLoader.
+func OpenLoadPkgsCached(
+	file string, load func(cfg *packages.Config, patterns ...string) ([]*packages.Package, error)) *LoadPkgsCached {
+	if load == nil {
+		load = packages.Load
+	}
+	imports := loadPkgsCacheFrom(file)
+	loaded := &loadedPkgs{
+		loaded: loadedPkgsFrom(imports),
+	}
+	return &LoadPkgsCached{imports: imports, loaded: loaded, pkgsLoad: load, cacheFile: file}
+}
+*/
+
+// ----------------------------------------------------------------------------
+
+type loadedPkgs struct {
+	loaded map[string]*packages.Package
+	mutex  sync.Mutex
+}
+
+var (
+	gblLoaded = &loadedPkgs{
+		loaded: map[string]*packages.Package{},
+	}
+)
+
+func (p *loadedPkgs) Lookup(pkgPath string) (pkg *packages.Package, ok bool) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	pkg, ok = p.loaded[pkgPath]
+	return
+}
+
+func (p *loadedPkgs) Add(pkg *packages.Package) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	p.loaded[pkg.PkgPath] = pkg
 }
 
 // ----------------------------------------------------------------------------

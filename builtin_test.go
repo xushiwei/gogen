@@ -19,14 +19,11 @@ import (
 	"go/token"
 	"go/types"
 	"math/big"
-	"reflect"
 	"testing"
 
 	"github.com/goplus/gox/internal"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/packages"
-
-	gomod "golang.org/x/mod/module"
 )
 
 func TestContractName(t *testing.T) {
@@ -315,6 +312,7 @@ func TestScopeHasName(t *testing.T) {
 	}
 }
 
+/*
 func TestToPersistNamedType(t *testing.T) {
 	pkg := types.NewPackage("", "foo")
 	o := types.NewTypeName(token.NoPos, pkg, "bar", types.Typ[types.Int])
@@ -408,6 +406,7 @@ func TestPkgsLoad(t *testing.T) {
 		t.Fatal("newPkgFingerp(os) != nil")
 	}
 }
+*/
 
 func TestPkgFingerp(t *testing.T) {
 	dep := &pkgdep{replace: "abc"}
@@ -448,6 +447,7 @@ func TestPkgFingerp(t *testing.T) {
 	}
 }
 
+/*
 func TestImported1(t *testing.T) {
 	pkg := new(Package)
 	pkg.mod = &module{
@@ -563,6 +563,7 @@ func TestImported2(t *testing.T) {
 		t.Fatal("localChanged failed")
 	}
 }
+*/
 
 func TestToFields(t *testing.T) {
 	pkg := new(Package)
@@ -797,6 +798,7 @@ func TestBinaryOpIssue805(t *testing.T) {
 	}
 }
 
+/*
 func TestPersistVal(t *testing.T) {
 	re := constant.MakeInt64(1)
 	im := constant.MakeImag(constant.MakeInt64(2))
@@ -813,6 +815,7 @@ func TestPersistVal(t *testing.T) {
 	}()
 	toPersistVal(constant.MakeUnknown())
 }
+*/
 
 func TestBuiltinCall(t *testing.T) {
 	defer func() {

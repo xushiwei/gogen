@@ -16,7 +16,6 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
-type LoadPkgsFunc = func(at *Package, importPkgs map[string]*PkgRef, pkgPaths ...string) int
 type LoadNamedFunc = func(at *Package, typ *types.Named)
 
 const (
@@ -136,9 +135,6 @@ type Config struct {
 	// NodeInterpreter is to interpret an ast.Node.
 	NodeInterpreter NodeInterpreter
 
-	// LoadPkgs is called to load all import packages.
-	LoadPkgs LoadPkgsFunc
-
 	// LoadNamed is called to load a delay-loaded named type.
 	LoadNamed LoadNamedFunc
 
@@ -192,9 +188,9 @@ func (p *file) endImport(this *Package, testingFile bool) {
 		return
 	}
 	if debugImport {
-		log.Println("==> LoadPkgs", pkgPaths, testingFile)
+		log.Println("==> LoadPkgs", pkgPaths, "tesing:", testingFile)
 	}
-	if n := this.loadPkgs(this, p.importPkgs, pkgPaths...); n > 0 {
+	if n := loadPkgs(this, p.importPkgs, pkgPaths...); n > 0 {
 		log.Panicf("total %d errors\n", n) // TODO: error message
 	}
 	p.delayPkgPaths = pkgPaths[:0]
@@ -323,7 +319,6 @@ type Package struct {
 	utBigInt       *types.Named
 	utBigRat       *types.Named
 	utBigFlt       *types.Named
-	loadPkgs       LoadPkgsFunc
 	autoIdx        int
 	testingFile    int
 	commentedStmts map[ast.Stmt]*ast.CommentGroup
@@ -342,19 +337,14 @@ func NewPackage(pkgPath, name string, conf *Config) *Package {
 	if newBuiltin == nil {
 		newBuiltin = newBuiltinDefault
 	}
-	loadPkgs := conf.LoadPkgs
-	if loadPkgs == nil {
-		loadPkgs = LoadGoPkgs
-	}
 	files := [2]file{
 		{importPkgs: make(map[string]*PkgRef)},
 		{importPkgs: make(map[string]*PkgRef)},
 	}
 	pkg := &Package{
-		Fset:     conf.Fset,
-		files:    files,
-		conf:     conf,
-		loadPkgs: loadPkgs,
+		Fset:  conf.Fset,
+		files: files,
+		conf:  conf,
 	}
 	pkg.Types = types.NewPackage(pkgPath, name)
 	pkg.builtin = newBuiltin(pkg, conf)
