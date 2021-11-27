@@ -370,7 +370,7 @@ func toObjectExpr(pkg *Package, v types.Object) ast.Expr {
 	}
 	importPkg := pkg.Import(atPkg.Path())
 	importPkg.EnsureImported()
-	x := ident(atPkg.Name())
+	x := ident(importPkg.name)
 	importPkg.nameRefs = append(importPkg.nameRefs, x)
 	return &ast.SelectorExpr{
 		X:   x,

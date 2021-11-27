@@ -36,6 +36,8 @@ type PkgRef struct {
 	// in a syntax provided by the underlying build system.
 	ID string
 
+	name string // may be different from Types.Name(), if it conflicts with other packages
+
 	// Types provides type information for the package.
 	// The NeedTypes LoadMode bit sets this field for packages matching the
 	// patterns; type information for dependencies may be missing or incomplete,
@@ -288,6 +290,7 @@ func loadPkgs(at *Package, importPkgs map[string]*PkgRef, pkgPaths ...string) in
 		if pkg, ok := importPkgs[loadPkg.PkgPath]; ok {
 			pkg.ID = loadPkg.ID
 			pkg.IllTyped = loadPkg.IllTyped
+			pkg.name = loadPkg.Name
 			pkg.Types = loadPkg.Types
 			if loadPkg.PkgPath != "unsafe" {
 				initGopPkg(loadPkg.Types)
