@@ -61,6 +61,28 @@ type PkgRef struct {
 	nameRefs []*ast.Ident // for internal use
 }
 
+func (p *PkgRef) pkgMod() (mod *packages.Module) {
+	if pkgf := p.pkgf; pkgf != nil {
+		mod = &packages.Module{}
+		mod.Path = p.Types.Path()
+		if pkgf.versioned {
+			pos := strings.Index(pkgf.fingerp, "@")
+			if pos < 0 {
+				panic("PkgRef: invalid fingerp - " + pkgf.fingerp)
+			}
+			path, ver := pkgf.fingerp[:pos], pkgf.fingerp[pos+1:]
+			if path == mod.Path {
+				mod.Version = ver
+				return
+			}
+			mod.Replace = &packages.Module{Path: path, Version: ver}
+		} else if pkgf.localrep {
+			mod.Replace = &packages.Module{Path: pkgf.files[0]}
+		}
+	}
+	return
+}
+
 // 1) Standard packages: nil
 // 2) Packages in module: {files, fingerp}
 // 3) External versioned packages: {fingerp=ver, versioned=true}
@@ -100,18 +122,25 @@ func newPkgFingerp(at *Package, loadPkg *packages.Package) *pkgFingerp {
 	return &pkgFingerp{fingerp: loadMod.Path + "@" + loadMod.Version, versioned: true}
 }
 
-func (p *pkgFingerp) getFingerp() string {
-	if p.fingerp == "" {
-		p.fingerp = calcFingerp(p.files)
+func (p *pkgFingerp) getFileList() []string {
+	if p != nil {
+		if p.localrep {
+			return p.files[1:]
+		}
+		return p.files
 	}
-	return p.fingerp
+	return nil
 }
 
-func (p *pkgFingerp) versionChanged(fingerp string) bool {
-	if p == nil || !p.versioned { // cache is not a versioned package
-		return true
+func (p *pkgFingerp) getFingerp() string {
+	if p.fingerp == "" {
+		files := p.files
+		if p.localrep {
+			files = files[1:]
+		}
+		p.fingerp = calcFingerp(files)
 	}
-	return p.fingerp != fingerp
+	return p.fingerp
 }
 
 func (p *pkgFingerp) localChanged() bool {
@@ -137,6 +166,13 @@ func (p *pkgFingerp) localRepChanged(localDir string) bool {
 		p.updated = true
 	}
 	return p.dirty
+}
+
+func (p *pkgFingerp) versionChanged(fingerp string) bool {
+	if p == nil || !p.versioned { // cache is not a versioned package
+		return true
+	}
+	return p.fingerp != fingerp
 }
 
 func (p *PkgRef) markUsed(v *ast.Ident) {
@@ -183,7 +219,7 @@ func (p *PkgRef) EnsureImported() {
 
 // LoadGoPkgs loads and returns the Go packages named by the given pkgPaths.
 func LoadGoPkgs(at *Package, importPkgs map[string]*PkgRef, pkgPaths ...string) int {
-	conf := at.InternalGetLoadConfig(loaded)
+	conf := at.InternalGetLoadConfig(nil)
 	loadPkgs, err := packages.Load(conf, pkgPaths...)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -358,12 +394,6 @@ type loadedPkgs struct {
 	mutex  sync.Mutex
 }
 
-var (
-	loaded = &loadedPkgs{
-		loaded: map[string]*packages.Package{},
-	}
-)
-
 func (p *loadedPkgs) Lookup(pkgPath string) (pkg *packages.Package, ok bool) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
@@ -381,6 +411,7 @@ func (p *loadedPkgs) Add(pkg *packages.Package) {
 
 type LoadPkgsCached struct {
 	imports   map[string]*PkgRef
+	loaded    *loadedPkgs
 	pkgsLoad  func(cfg *packages.Config, patterns ...string) ([]*packages.Package, error)
 	cacheFile string
 }
@@ -444,7 +475,7 @@ retry:
 			log.Println("Load packages too many times:", unimportedPaths)
 			return len(unimportedPaths)
 		}
-		conf := at.InternalGetLoadConfig(loaded)
+		conf := at.InternalGetLoadConfig(p.loaded)
 		loadPkgs, err := p.pkgsLoad(conf, unimportedPaths...)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -470,7 +501,10 @@ func NewLoadPkgsCached(
 		load = packages.Load
 	}
 	imports := make(map[string]*PkgRef)
-	return (&LoadPkgsCached{imports: imports, pkgsLoad: load}).Load
+	loaded := &loadedPkgs{
+		loaded: map[string]*packages.Package{},
+	}
+	return (&LoadPkgsCached{imports: imports, loaded: loaded, pkgsLoad: load}).Load
 }
 
 // OpenLoadPkgsCached opens cache file and returns the cached pkgLoader.
@@ -480,7 +514,10 @@ func OpenLoadPkgsCached(
 		load = packages.Load
 	}
 	imports := loadPkgsCacheFrom(file)
-	return &LoadPkgsCached{imports: imports, pkgsLoad: load, cacheFile: file}
+	loaded := &loadedPkgs{
+		loaded: loadedPkgsFrom(imports),
+	}
+	return &LoadPkgsCached{imports: imports, loaded: loaded, pkgsLoad: load, cacheFile: file}
 }
 
 // ----------------------------------------------------------------------------

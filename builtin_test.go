@@ -29,25 +29,6 @@ import (
 	gomod "golang.org/x/mod/module"
 )
 
-/*
-func TestPkgsLoad(t *testing.T) {
-	const (
-		loadTypes = packages.NeedImports | packages.NeedDeps | packages.NeedTypes
-		loadModes = loadTypes | packages.NeedName | packages.NeedModule | packages.NeedFiles
-	)
-	cfg := &packages.Config{
-		Mode:   loadModes,
-		Loaded: loaded,
-	}
-	if _, err := packages.Load(cfg, "strconv", "strings"); err != nil {
-		t.Fatal("TestPkgsLoad:", err)
-	}
-	if _, err := packages.Load(cfg, "fmt", "context", "time", "flag", "testing"); err != nil {
-		t.Fatal("TestPkgsLoad:", err)
-	}
-}
-*/
-
 func TestContractName(t *testing.T) {
 	testcases := []struct {
 		Contract
@@ -402,6 +383,29 @@ func TestLoadModFile(t *testing.T) {
 		t.Fatal("TestLoadModFile failed")
 	} else if dep := mod.deps["golang.org/x/tools"]; dep == nil || dep.replace != "/local/dir" {
 		t.Fatal("TestLoadModFile: golang.org/x/tools =>", dep.replace)
+	}
+}
+
+func TestPkgsLoad(t *testing.T) {
+	const (
+		loadTypes = packages.NeedImports | packages.NeedDeps | packages.NeedTypes
+		loadModes = loadTypes | packages.NeedName | packages.NeedModule | packages.NeedFiles
+	)
+	cfg := &packages.Config{
+		Mode: loadModes,
+	}
+	pkgs, err := packages.Load(cfg, "os")
+	if err != nil {
+		t.Fatal("TestPkgsLoad os:", err)
+	}
+	if pkgs[0].Module != nil {
+		t.Fatal("TestPkgsLoad osPkg.Module != nil:", pkgs[0].Module)
+	}
+
+	pkg := &Package{conf: &Config{ModRootDir: "not-found"}}
+	pkg.loadMod()
+	if newPkgFingerp(pkg, pkgs[0]) != nil {
+		t.Fatal("newPkgFingerp(os) != nil")
 	}
 }
 

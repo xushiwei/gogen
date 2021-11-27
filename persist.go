@@ -25,6 +25,8 @@ import (
 	"math/big"
 	"reflect"
 	"strconv"
+
+	"golang.org/x/tools/go/packages"
 )
 
 type pobj = map[string]interface{}
@@ -705,6 +707,30 @@ func loadPkgsCacheFrom(file string) map[string]*PkgRef {
 		}
 	}
 	return make(map[string]*PkgRef)
+}
+
+// ----------------------------------------------------------------------------
+
+func loadedPkgFrom(imp *PkgRef) *packages.Package {
+	return &packages.Package{
+		ID:       imp.ID,
+		Name:     imp.Types.Name(),
+		PkgPath:  imp.Types.Path(),
+		GoFiles:  imp.pkgf.getFileList(),
+		Imports:  nil,
+		Types:    imp.Types,
+		Fset:     nil,
+		IllTyped: imp.IllTyped,
+		Module:   imp.pkgMod(),
+	}
+}
+
+func loadedPkgsFrom(imports map[string]*PkgRef) map[string]*packages.Package {
+	loaded := map[string]*packages.Package{}
+	for path, imp := range imports {
+		loaded[path] = loadedPkgFrom(imp)
+	}
+	return loaded
 }
 
 // ----------------------------------------------------------------------------
