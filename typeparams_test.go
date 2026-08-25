@@ -744,7 +744,11 @@ type Data[T1 any, T2 any] struct {
 	pkgRef := pkg.Import("foo")
 	tyData := pkgRef.Ref("Data").Type()
 	tyInt := types.Typ[types.Int]
-	codeErrorTestEx(t, pkg, `./foo.gop:5:40: got 1 type arguments but foo.Data[T1, T2 any] has 2 type parameters`,
+	msg := `./foo.gop:5:40: got 1 type arguments but foo.Data[T1, T2 any] has 2 type parameters`
+	if isLeastGo(27) {
+		msg = `./foo.gop:5:40: cannot instantiate foo.Data[T1, T2 any]: got 1 type arguments but have 2 type parameters`
+	}
+	codeErrorTestEx(t, pkg, msg,
 		func(pkg *gogen.Package) {
 			pkg.NewFunc(nil, "main", nil, nil, false).BodyStart(pkg).
 				DefineVarStart(0, "v1").Typ(tyData).Typ(tyInt).Index(1, 0, source(`foo.Data[int]`, 5, 40)).Star().Val(nil).Call(1).EndInit(1).
@@ -769,7 +773,11 @@ type Data[T1 any, T2 any] struct {
 	pkgRef := pkg.Import("foo")
 	tyData := pkgRef.Ref("Data").Type()
 	tyInt := types.Typ[types.Int]
-	codeErrorTestEx(t, pkg, `./foo.gop:5:40: got 3 type arguments but foo.Data[T1, T2 any] has 2 type parameters`,
+	msg := `./foo.gop:5:40: got 3 type arguments but foo.Data[T1, T2 any] has 2 type parameters`
+	if isLeastGo(27) {
+		msg = `./foo.gop:5:40: cannot instantiate foo.Data[T1, T2 any]: got 3 type arguments but have 2 type parameters`
+	}
+	codeErrorTestEx(t, pkg, msg,
 		func(pkg *gogen.Package) {
 			pkg.NewFunc(nil, "main", nil, nil, false).BodyStart(pkg).
 				DefineVarStart(0, "v1").Typ(tyData).Typ(tyInt).Typ(tyInt).Typ(tyInt).Index(3, 0, source(`foo.Data[int,int,int]`, 5, 40)).Star().Val(nil).Call(1).EndInit(1).
@@ -793,7 +801,11 @@ func Test[T1 any, T2 any](t1 T1, t2 T2) {
 	pkgRef := pkg.Import("foo")
 	fnTest := pkgRef.Ref("Test")
 	tyInt := types.Typ[types.Int]
-	codeErrorTestEx(t, pkg, `./foo.gop:5:40: got 3 type arguments but func[T1, T2 any](t1 T1, t2 T2) has 2 type parameters`,
+	msg := `./foo.gop:5:40: got 3 type arguments but func[T1, T2 any](t1 T1, t2 T2) has 2 type parameters`
+	if isLeastGo(27) {
+		msg = `./foo.gop:5:40: cannot instantiate func[T1, T2 any](t1 T1, t2 T2): got 3 type arguments but have 2 type parameters`
+	}
+	codeErrorTestEx(t, pkg, msg,
 		func(pkg *gogen.Package) {
 			pkg.NewFunc(nil, "main", nil, nil, false).BodyStart(pkg).
 				Val(fnTest).Typ(tyInt).Typ(tyInt).Typ(tyInt).Index(3, 0, source(`foo.Test[int,int,int]`, 5, 40)).Val(1).Val(1).Call(2).EndStmt().
