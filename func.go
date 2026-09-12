@@ -259,14 +259,12 @@ func (p *Package) NewFuncWith(
 		p.expObjTypes = append(p.expObjTypes, sig)
 	}
 
+	fn.decl = &funcDecl{}
 	// Populate the declaration header (Name/Type) up front so that a body-less
 	// function (created with a nil body and never passed through BodyStart/End)
 	// is still a valid declaration when code is generated. Otherwise Type stays
 	// nil and code generation panics while dereferencing it.
-	fn.decl = &funcDecl{
-		Name: &ast.Ident{Name: name},
-		Type: toFuncType(p, sig),
-	}
+	fn.decl.Name, fn.decl.Type = &ast.Ident{Name: name}, toFuncType(p, sig)
 	p.file.appendFuncDecl(fn.decl, sig)
 	return fn, nil
 }
