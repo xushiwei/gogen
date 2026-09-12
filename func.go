@@ -151,7 +151,7 @@ func (p *Package) NewFuncDecl(pos token.Pos, name string, sig *types.Signature) 
 // validateParamOrder validates that optional parameters come after positional parameters
 // and before any variadic parameter.
 // Valid order: positional → optional → variadic
-func (p *Package) validateParamOrder(cb *CodeBuilder, pos token.Pos, params *types.Tuple, variadic bool) error {
+func (p *Package) validateParamOrder(cb *CodeBuilder, params *types.Tuple, variadic bool) error {
 	n := params.Len()
 	foundOptional := false
 
@@ -204,8 +204,7 @@ func (p *Package) NewFuncWith(
 	if name == "" {
 		panic("no func name")
 	}
-	cb := p.cb
-	if err := p.validateParamOrder(&cb, pos, sig.Params(), sig.Variadic()); err != nil {
+	if err := p.validateParamOrder(&p.cb, sig.Params(), sig.Variadic()); err != nil {
 		return nil, err
 	}
 	fn := &Func{Func: types.NewFunc(pos, p.Types, name, sig)}
@@ -222,33 +221,33 @@ func (p *Package) NewFuncWith(
 		}
 		if !ok {
 			posErr := getRecv(recvTypePos)
-			return nil, cb.newCodeErrorf(posErr, posErr, "invalid receiver type %v (%v is not a defined type)", typ, typ)
+			return nil, p.cb.newCodeErrorf(posErr, posErr, "invalid receiver type %v (%v is not a defined type)", typ, typ)
 		}
 		switch getUnderlying(p, t.Obj().Type()).(type) {
 		case *types.Interface:
 			posErr := getRecv(recvTypePos)
-			return nil, cb.newCodeErrorf(posErr, posErr, "invalid receiver type %v (%v is an interface type)", typ, typ)
+			return nil, p.cb.newCodeErrorf(posErr, posErr, "invalid receiver type %v (%v is an interface type)", typ, typ)
 		case *types.Pointer:
 			posErr := getRecv(recvTypePos)
-			return nil, cb.newCodeErrorf(posErr, posErr, "invalid receiver type %v (%v is a pointer type)", typ, typ)
+			return nil, p.cb.newCodeErrorf(posErr, posErr, "invalid receiver type %v (%v is a pointer type)", typ, typ)
 		}
 		if name != "_" { // skip underscore
 			if _, obj := lookupStaticMember(t, name); obj != nil {
-				return nil, cb.newCodeErrorf(pos, pos, "method %s conflicts with existing %s", name, staticMemberKind(obj))
+				return nil, p.cb.newCodeErrorf(pos, pos, "method %s conflicts with existing %s", name, staticMemberKind(obj))
 			}
 			t.AddMethod(fn.Func)
 		}
 	} else if name == "init" { // init is not a normal func
 		if sig.Params() != nil || sig.Results() != nil {
-			return nil, cb.newCodeErrorf(
+			return nil, p.cb.newCodeErrorf(
 				pos, pos, "func init must have no arguments and no return values")
 		}
 	} else if name != "_" { // skip underscore
 		old := p.Types.Scope().Insert(fn.Obj())
 		if old != nil {
 			if !(p.allowRedecl && types.Identical(old.Type(), sig)) { // for c2go
-				oldPos := cb.fset.Position(old.Pos())
-				return nil, cb.newCodeErrorf(
+				oldPos := p.cb.fset.Position(old.Pos())
+				return nil, p.cb.newCodeErrorf(
 					pos, pos, "%s redeclared in this block\n\t%v: other declaration of %s", name, oldPos, name)
 			}
 		}
